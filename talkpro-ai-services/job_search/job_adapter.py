@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
 
 from .superjob_client import SuperJobClient
 
@@ -16,75 +15,67 @@ class JobSearchAdapter:
         :param superjob_secret_key: Секретный ключ для SuperJob API
         """
         self.sj_client = SuperJobClient(superjob_secret_key)
-        self._search_cache = {} 
+        self._search_cache = {}
+        self._contacts_limit = 100
+        self._contacts_used = 0
 
     async def search_candidates(
         self,
         keyword: str,
         town: str = "Москва",
         limit: int = 20,
-        min_salary: Optional[int] = None,
-        experience_years: Optional[int] = None, 
-    ) -> List[Dict[str, Any]]:
-        """
-        Поиск кандидатов по ключевому слову.
-
-        :param keyword: Должность или ключевые навыки
-        :param town: Город
-        :param limit: Максимальное количество результатов
-        :param min_salary: Минимальная зарплата (фильтр)
-        :param experience_years: Минимальный опыт в годах
-        :return: Список нормализованных кандидатов
-        """
-        cache_key = f"{keyword}_{town}_{limit}"
+        page: int = 0,
+        min_salary: int | None = None,
+        experience_years: int | None = None,
+        include_contacts: bool = False
+    ) -> Dict[str, Any]:
+        cache_key = f"{keyword}_{town}_{limit}_{page}_{min_salary}_{experience_years}_{include_contacts}"
         if cache_key in self._search_cache:
             logger.info(f"Возвращаем кешированный результат для {keyword}")
             return self._search_cache[cache_key]
 
-        logger.info(f"Поиск кандидатов: {keyword} в {town}")
-
-        # Преобразуем опыт в ID SuperJob
         exp_id = self._experience_to_id(experience_years) if experience_years else None
-
-        # Запрос к SuperJob
-        resumes = await self.sj_client.search_resumes(
+        response = await self.sj_client.search_resumes(
             keyword=keyword,
             town=town,
             count=limit,
+            page=page,
             payment_from=min_salary,
             experience=exp_id
         )
+        resumes = response.get("objects", [])
+        more = response.get("more", False)
 
-        # Нормализуем каждое резюме
         normalized = [self._normalize_sj_resume(r) for r in resumes]
+        if include_contacts:
+            for idx, r in enumerate(resumes):
+                if self._contacts_used < self._contacts_limit:
+                    contacts = await self.sj_client.get_resume_contacts(r["id"])
+                    if contacts:
+                        normalized[idx]["contacts"] = contacts
+                        self._contacts_used += 1
 
-        # Кешируем на 5 минут (можно позже добавить TTL)
-        self._search_cache[cache_key] = normalized
+        result = {"candidates": normalized, "more": more}
+        self._search_cache[cache_key] = result
         asyncio.create_task(self._invalidate_cache_after(cache_key, 300))
-
-        return normalized
+        return result
 
     def _normalize_sj_resume(self, raw: Dict[str, Any]) -> Dict[str, Any]:
-        """Приведение резюме SuperJob к единому формату"""
-        # Основные поля
         profession = raw.get("profession", "")
-        payment_from = raw.get("payment_from")
-        payment_to = raw.get("payment_to")
+        payment = raw.get("payment")
+        payment_from = raw.get("payment_from") or payment
+        payment_to = raw.get("payment_to") or payment
         currency = raw.get("currency", "rub")
 
-        # Опыт работы
         exp_obj = raw.get("experience", {})
         exp_title = exp_obj.get("title") if isinstance(exp_obj, dict) else None
 
-        # Образование
         edu_obj = raw.get("education", {})
         edu_title = edu_obj.get("title") if isinstance(edu_obj, dict) else None
 
-        # Город
         town_obj = raw.get("town", {})
         town_title = town_obj.get("title") if isinstance(town_obj, dict) else None
 
-        # Контакты (будут только при авторизации)
         contacts = {}
         if raw.get("contact"):
             contacts["name"] = raw["contact"]
@@ -105,30 +96,27 @@ class JobSearchAdapter:
             "age": raw.get("age"),
             "gender": raw.get("gender", {}).get("title") if raw.get("gender") else None,
             "city": town_title,
-            "skills": None,  # можно будет добавить парсинг навыков
+            "skills": None,
             "contacts": contacts,
             "url": raw.get("link"),
-            "raw": raw  # исходные данные на всякий случай
+            "raw": raw
         }
 
     def _experience_to_id(self, years: int) -> Optional[int]:
-        """Преобразует опыт в годах в ID SuperJob"""
         if years < 1:
-            return 1   # без опыта
+            return 1
         elif years < 3:
-            return 2   # от 1 года
+            return 2
         elif years < 6:
-            return 3   # от 3 лет
+            return 3
         else:
-            return 4   # от 6 лет
+            return 4
 
     async def _invalidate_cache_after(self, key: str, seconds: int):
-        """Удаление ключа из кеша через заданное время"""
         await asyncio.sleep(seconds)
         if key in self._search_cache:
             del self._search_cache[key]
             logger.debug(f"Кеш {key} очищен")
 
     async def close(self):
-        """Закрытие всех клиентов"""
         await self.sj_client.close()

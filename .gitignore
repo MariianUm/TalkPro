@@ -1,2 +1,32 @@
-.env
-.env
+# Зависимости
+node_modules/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.so
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# Логи и временные файлы
+*.log
+*.tmp
+*.tar.gz
+*.zip
+
+# Среда разработки
+.vscode/
+.idea/
+
+# БД и загруженные файлы (если не хотите их в репозитории)
+*.db
+*.json
+uploads/
+
+# Кэш сборки
+dist/
+build/
+*.egg-info/
+.pytest_cache/
