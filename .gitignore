@@ -30,3 +30,25 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Virtual environments
+venv/
+.venv/
+talkpro-ai-services/TalkPro/venv/
+
+# Python cache
+**/__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+
+# Node (если есть)
+node_modules/
+
+# Uploads
+frontend-backend/backend/uploads/

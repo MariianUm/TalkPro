@@ -3,7 +3,6 @@ import time
 import random
 from typing import Dict, Any
 
-# Синглтон-клиент (один на всё приложение)
 _singleton_client = None
 
 class YandexCalendarQueueClient:
@@ -15,8 +14,6 @@ class YandexCalendarQueueClient:
         self.max_retries = max_retries
         self.events_created = 0
         self.processing_tasks = 0
-        
-        # Метрики для гипотезы (сохраняются между запросами)
         self.metrics = {
             "total": 0,
             "success": 0,
@@ -28,9 +25,6 @@ class YandexCalendarQueueClient:
         print(f"Яндекс.Календарь: Клиент инициализирован (max_retries={max_retries})")
     
     async def create_interview_event(self, **kwargs) -> Dict[str, Any]:
-        """
-        Основной метод - имитирует работу через очередь
-        """
         task_id = f"task_{int(time.time())}_{random.randint(100, 999)}"
         start_time = time.time()
         
@@ -38,14 +32,10 @@ class YandexCalendarQueueClient:
         self.processing_tasks += 1
         
         try:
-            # Имитируем "постановку в очередь" - небольшая задержка
             queue_delay = random.uniform(0.05, 0.2)
             await asyncio.sleep(queue_delay)
             
-            # Выполняем с повторными попытками
             result = await self._execute_with_retry(kwargs)
-            
-            # Общее время выполнения
             total_time = time.time() - start_time
             
             result["queue_info"] = {
@@ -61,18 +51,13 @@ class YandexCalendarQueueClient:
             self.processing_tasks -= 1
     
     async def _execute_with_retry(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Выполнение с повторными попытками
-        """
         execution_start = time.time()
         
         for attempt in range(self.max_retries):
             try:
-                # Сетевая задержка
                 network_delay = random.uniform(0.3, 1.2)
                 await asyncio.sleep(network_delay)
                 
-                # 20% шанс ошибки на первой попытке, меньше на следующих
                 error_chance = 0.2 / (attempt + 1)
                 if random.random() < error_chance:
                     raise Exception(f"Мок: Ошибка API 429 (попытка {attempt + 1})")
@@ -103,7 +88,6 @@ class YandexCalendarQueueClient:
                 self.metrics["total"] += 1
                 
                 if attempt < self.max_retries - 1:
-                    # Exponential backoff
                     delay = 0.8 * (2 ** attempt)
                     self.metrics["retried"] += 1
                     await asyncio.sleep(delay + random.uniform(0, 0.3))
@@ -112,7 +96,6 @@ class YandexCalendarQueueClient:
                     raise Exception(f"Не удалось после {self.max_retries} попыток: {str(e)}")
     
     def get_queue_status(self) -> Dict[str, Any]:
-        """Статус очереди"""
         return {
             "processing_tasks": self.processing_tasks,
             "implementation": "lightweight_queue",
@@ -124,7 +107,6 @@ class YandexCalendarQueueClient:
         }
     
     def get_metrics(self) -> Dict[str, Any]:
-        """Метрики для гипотезы"""
         times = self.metrics["response_times"]
         
         result = {
@@ -161,8 +143,6 @@ class YandexCalendarQueueClient:
             **self.get_metrics()
         }
 
-
-# Фабрика с синглтоном
 def get_yandex_calendar_client(use_queue: bool = True):
     """
     Возвращает один и тот же экземпляр клиента (синглтон)

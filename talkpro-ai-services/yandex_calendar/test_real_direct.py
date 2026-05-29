@@ -2,7 +2,6 @@ import asyncio
 from yandex_calendar_real import YandexCalendarRealClient
 
 async def test_direct():
-    # Вставьте свои данные
     EMAIL = "umagalova.msh@phystech.edu"
     APP_PASSWORD = "jiwlcfypagqgpplr"
 
@@ -20,7 +19,7 @@ async def test_direct():
 
     try:
         result = await client.create_interview_event(**event_data)
-        print("✅ Успех!")
+        print("Успех!")
         print(result)
     except Exception as e:
         print(f"Ошибка: {e}")

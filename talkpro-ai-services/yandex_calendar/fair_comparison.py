@@ -8,13 +8,8 @@ from dataclasses import dataclass, field
 import matplotlib.pyplot as plt
 import numpy as np
 
-# ============================================================================
-# 1. DATA CLASSES
-# ============================================================================
-
 @dataclass
 class TestResult:
-    """Результат теста одного подхода"""
     name: str
     success_count: int
     total_requests: int
@@ -25,27 +20,17 @@ class TestResult:
     
     @property
     def success_rate(self) -> float:
-        """Процент успешных запросов"""
         if self.total_requests == 0:
             return 0.0
         return (self.success_count / self.total_requests) * 100
     
     @property
     def efficiency(self) -> float:
-        """Эффективность: успешные запросы в секунду"""
         if self.total_time == 0:
             return 0.0
         return self.success_count / self.total_time
 
-# ============================================================================
-# 2. MOCK API (упрощенный)
-# ============================================================================
-
 class MockCalendarAPI:
-    """
-    Упрощенный мок API Яндекс.Календаря.
-    Контролируемо имитирует задержки и ошибки для чистого эксперимента.
-    """
     
     def __init__(self, 
                  fail_rate: float = 0.2, 
@@ -68,13 +53,7 @@ class MockCalendarAPI:
         self.requests_in_window = 0
         
     async def create_event(self, request_id: str) -> Dict[str, Any]:
-        """
-        Имитация создания события в календаре.
-        Возвращает успешный ответ или вызывает исключение.
-        """
         self.call_count += 1
-        
-        # Имитация Rate Limiting
         if self.rate_limit:
             now = time.time()
             if now - self.last_reset >= 1.0:
@@ -88,12 +67,9 @@ class MockCalendarAPI:
                     f"Rate Limit Exceeded: {self.rate_limit} req/sec "
                     f"(request {request_id})"
                 )
-        
-        # Имитация сетевой задержки
         delay = random.uniform(*self.latency_range)
         await asyncio.sleep(delay)
         
-        # Имитация случайных ошибок API
         if random.random() < self.fail_rate:
             self.error_count += 1
             raise Exception(
@@ -101,7 +77,6 @@ class MockCalendarAPI:
                 f"(request {request_id}, delay: {delay:.2f}s)"
             )
         
-        # Успешный ответ (имитация реального API)
         return {
             "id": f"event_{request_id}_{int(time.time())}",
             "status": "created",
@@ -115,14 +90,12 @@ class MockCalendarAPI:
         }
     
     def reset_stats(self):
-        """Сброс статистики"""
         self.call_count = 0
         self.error_count = 0
         self.requests_in_window = 0
         self.last_reset = time.time()
     
     def get_stats(self) -> Dict[str, Any]:
-        """Статистика мок-API"""
         error_rate = (self.error_count / self.call_count * 100) if self.call_count > 0 else 0
         
         return {
@@ -136,19 +109,12 @@ class MockCalendarAPI:
             }
         }
 
-# ============================================================================
-# 3. ТЕСТОВЫЕ ФУНКЦИИ (4 ПОДХОДА)
-# ============================================================================
-
 async def test_sync_no_retry(
     api: MockCalendarAPI, 
     num_requests: int,
     request_prefix: str = "sync"
 ) -> TestResult:
-    """
-    Тест 1: Синхронный подход БЕЗ повторных попыток
-    (Базовый вариант - как у большинства сейчас)
-    """
+
     print(f"  [{request_prefix}] Запуск синхронных запросов без retry...")
     
     start_time = time.time()
@@ -158,7 +124,6 @@ async def test_sync_no_retry(
     
     for i in range(num_requests):
         try:
-            # Замер времени выполнения одного запроса
             request_start = time.time()
             result = await api.create_event(f"{request_prefix}_no_retry_{i}")
             request_time = time.time() - request_start
@@ -166,12 +131,10 @@ async def test_sync_no_retry(
             successes += 1
             response_times.append(request_time)
             
-            # Небольшая пауза между запросами (имитация реального синхронного потока)
             await asyncio.sleep(0.05)
             
         except Exception as e:
             errors.append(str(e))
-            # При ошибке ждем чуть дольше
             await asyncio.sleep(0.2)
     
     total_time = time.time() - start_time
@@ -198,9 +161,6 @@ async def test_sync_with_retry(
     max_retries: int = 3,
     request_prefix: str = "sync_retry"
 ) -> TestResult:
-    """
-    Тест 2: Синхронный подход С повторными попытками
-    """
     print(f"  [{request_prefix}] Запуск синхронных запросов с retry (max={max_retries})...")
     
     start_time = time.time()
@@ -222,21 +182,18 @@ async def test_sync_with_retry(
                 
                 successes += 1
                 response_times.append(request_time)
-                break  # Успех - выходим из цикла retry
+                break 
                 
             except Exception as e:
                 last_error = e
                 
                 if attempt < max_retries:
-                    # Exponential backoff с jitter
-                    delay = (2 ** attempt) * 0.5  # 0.5, 1.0, 2.0 секунд
+                    delay = (2 ** attempt) * 0.5 
                     jitter = random.uniform(0, 0.3)
                     await asyncio.sleep(delay + jitter)
                 else:
-                    # Последняя попытка тоже провалилась
                     errors.append(f"Request {i}: {str(last_error)}")
         
-        # Пауза между разными запросами
         await asyncio.sleep(0.05)
     
     total_time = time.time() - start_time
@@ -265,9 +222,6 @@ async def test_async_no_retry(
     concurrency: int = 10,
     request_prefix: str = "async"
 ) -> TestResult:
-    """
-    Тест 3: Асинхронный подход БЕЗ повторных попыток
-    """
     print(f"  [{request_prefix}] Запуск асинхронных запросов без retry (concurrency={concurrency})...")
     
     start_time = time.time()
@@ -275,7 +229,6 @@ async def test_async_no_retry(
     errors = []
     response_times = []
     
-    # Семафор для ограничения одновременных запросов
     semaphore = asyncio.Semaphore(concurrency)
     
     async def make_request(i: int):
@@ -292,7 +245,6 @@ async def test_async_no_retry(
             except Exception as e:
                 errors.append(f"Request {i}: {str(e)}")
     
-    # Создаем и запускаем все задачи
     tasks = [make_request(i) for i in range(num_requests)]
     await asyncio.gather(*tasks)
     
@@ -321,9 +273,6 @@ async def test_async_with_retry(
     concurrency: int = 10,
     request_prefix: str = "async_retry"
 ) -> TestResult:
-    """
-    Тест 4: Асинхронный подход С повторными попытками (НАША ГИПОТЕЗА)
-    """
     print(f"  [{request_prefix}] Запуск асинхронных запросов с retry "
           f"(concurrency={concurrency}, max_retries={max_retries})...")
     
@@ -333,7 +282,6 @@ async def test_async_with_retry(
     response_times = []
     total_attempts = 0
     
-    # Семафор для контроля параллелизма
     semaphore = asyncio.Semaphore(concurrency)
     
     async def make_request_with_retry(i: int):
@@ -362,7 +310,6 @@ async def test_async_with_retry(
                 else:
                     errors.append(f"Request {i} failed after {max_retries} retries: {str(last_error)}")
     
-    # Запускаем все задачи
     tasks = [make_request_with_retry(i) for i in range(num_requests)]
     await asyncio.gather(*tasks)
     
@@ -386,20 +333,13 @@ async def test_async_with_retry(
         }
     )
 
-# ============================================================================
-# 4. ОСНОВНАЯ ФУНКЦИЯ СРАВНЕНИЯ
-# ============================================================================
 
 async def run_comprehensive_comparison():
-    """
-    Основная функция сравнения всех 4 подходов
-    с разными сценариями нагрузки
-    """
+
     print("=" * 80)
     print("КОМПЛЕКСНОЕ СРАВНЕНИЕ: 4 ПОДХОДА К ИНТЕГРАЦИИ С КАЛЕНДАРЕМ")
     print("=" * 80)
     
-    # Сценарии тестирования
     test_scenarios = [
         {
             "name": "Низкая нагрузка, мало ошибок",
@@ -444,7 +384,6 @@ async def run_comprehensive_comparison():
         print(f"  • Задержка: {scenario['latency'][0]}-{scenario['latency'][1]} сек")
         print(f"  • Rate limit: {scenario['rate_limit']} запр/сек")
         
-        # Создаем API с параметрами сценария
         api = MockCalendarAPI(
             fail_rate=scenario['fail_rate'],
             latency_range=scenario['latency'],
@@ -453,42 +392,40 @@ async def run_comprehensive_comparison():
         
         scenario_results = []
         
-        # Тест 1: Синхронный без retry
         api.reset_stats()
         result1 = await test_sync_no_retry(api, scenario['requests'])
         scenario_results.append(result1)
         print(f"    ✓ Синхронный без retry: {result1.success_count}/{scenario['requests']} "
               f"({result1.success_rate:.1f}%), время: {result1.total_time:.1f}с")
         
-        # Тест 2: Синхронный с retry
         api.reset_stats()
         result2 = await test_sync_with_retry(api, scenario['requests'])
         scenario_results.append(result2)
         print(f"    ✓ Синхронный с retry: {result2.success_count}/{scenario['requests']} "
               f"({result2.success_rate:.1f}%), время: {result2.total_time:.1f}с")
         
-        # Тест 3: Асинхронный без retry
+    
         api.reset_stats()
         result3 = await test_async_no_retry(api, scenario['requests'], concurrency=15)
         scenario_results.append(result3)
         print(f"    ✓ Асинхронный без retry: {result3.success_count}/{scenario['requests']} "
               f"({result3.success_rate:.1f}%), время: {result3.total_time:.1f}с")
         
-        # Тест 4: Асинхронный с retry (гипотеза)
+    
         api.reset_stats()
         result4 = await test_async_with_retry(api, scenario['requests'], concurrency=15)
         scenario_results.append(result4)
         print(f"    ✓ Асинхронный с retry: {result4.success_count}/{scenario['requests']} "
               f"({result4.success_rate:.1f}%), время: {result4.total_time:.1f}с")
         
-        # Добавляем результаты сценария
+       
         all_results.append({
             "scenario": scenario['name'],
             "params": scenario,
             "results": scenario_results
         })
         
-        # Выводим статистику API для этого сценария
+      
         api_stats = api.get_stats()
         print(f"\n    Статистика API для сценария:")
         print(f"      Всего вызовов: {api_stats['total_calls']}")
@@ -496,9 +433,6 @@ async def run_comprehensive_comparison():
     
     return all_results
 
-# ============================================================================
-# 5. АНАЛИЗ И ВИЗУАЛИЗАЦИЯ РЕЗУЛЬТАТОВ
-# ============================================================================
 
 def analyze_and_visualize(all_results):
     """Анализ результатов и создание графиков"""
@@ -507,12 +441,12 @@ def analyze_and_visualize(all_results):
     print("АНАЛИЗ РЕЗУЛЬТАТОВ И ВИЗУАЛИЗАЦИЯ")
     print("="*80)
     
-    # Подготовка данных для графиков
+
     scenarios = [r['scenario'] for r in all_results]
     approach_names = ["Синхронный без retry", "Синхронный с retry", 
                       "Асинхронный без retry", "Асинхронный с retry"]
     
-    # Массивы для каждого подхода
+ 
     success_rates = [[] for _ in range(4)]
     total_times = [[] for _ in range(4)]
     efficiencies = [[] for _ in range(4)]
@@ -523,15 +457,15 @@ def analyze_and_visualize(all_results):
             total_times[i].append(result.total_time)
             efficiencies[i].append(result.efficiency)
     
-    # Создание графиков
+
     fig, axes = plt.subplots(2, 3, figsize=(18, 12))
     fig.suptitle('Сравнение подходов к интеграции с Яндекс.Календарем', 
                  fontsize=16, fontweight='bold', y=1.02)
     
-    # Цвета для разных подходов
+
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
     
-    # 1. Процент успеха по сценариям
+
     x = np.arange(len(scenarios))
     width = 0.2
     
@@ -547,7 +481,7 @@ def analyze_and_visualize(all_results):
     axes[0, 0].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     axes[0, 0].grid(axis='y', alpha=0.3)
     
-    # 2. Общее время выполнения
+
     for i in range(4):
         axes[0, 1].plot(scenarios, total_times[i], 'o-', 
                        label=approach_names[i], color=colors[i], linewidth=2, markersize=8)
@@ -559,7 +493,7 @@ def analyze_and_visualize(all_results):
     axes[0, 1].legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     axes[0, 1].grid(alpha=0.3)
     
-    # 3. Эффективность (запросов в секунду)
+
     for i in range(4):
         axes[0, 2].bar(x + i*width, efficiencies[i], width, 
                       label=approach_names[i], color=colors[i], alpha=0.8)
@@ -571,7 +505,7 @@ def analyze_and_visualize(all_results):
     axes[0, 2].set_xticklabels(scenarios, rotation=15, ha='right')
     axes[0, 2].grid(axis='y', alpha=0.3)
     
-    # 4. Сводная таблица (текстовая)
+  
     axes[1, 0].axis('off')
     summary_text = "СВОДКА РЕЗУЛЬТАТОВ:\n\n"
     
@@ -588,7 +522,7 @@ def analyze_and_visualize(all_results):
                    fontsize=11, verticalalignment='top',
                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     
-    # 5. Радарная диаграмма для лучшего сценария
+   
     ax_radar = axes[1, 1]
     
     # Находим лучший подход по эффективности
@@ -670,10 +604,6 @@ def analyze_and_visualize(all_results):
     
     return best_idx
 
-# ============================================================================
-# 6. ГЛАВНАЯ ФУНКЦИЯ
-# ============================================================================
-
 async def main():
     """Главная функция запуска тестирования"""
     
@@ -718,9 +648,6 @@ async def main():
     print("  3. Используй результаты для обоснования архитектуры")
     print("="*80)
 
-# ============================================================================
-# 7. ТОЧКА ВХОДА
-# ============================================================================
 
 if __name__ == "__main__":
     # Запуск асинхронной главной функции
